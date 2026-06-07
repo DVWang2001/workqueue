@@ -852,26 +852,49 @@ async function ensureTodayRecord(uid, templates) {
   const today = getTodayUTC8();
   const ref   = doc(db, 'users', uid, 'dailyRecords', today);
   const snap  = await getDoc(ref);
+  const templateMap = new Map(templates.map(t => [t.id, t]));
 
   if (!snap.exists()) {
-    await setDoc(ref, {
-      date:    today,
-      items:   templates.map(t => ({ id: t.id, title: t.title, done: false, ...(t.dur ? { dur: t.dur, unit: t.unit } : {}) })),
-      allDone: false,
-    });
-  } else {
-    const record       = snap.data();
-    const existingIds  = new Set(record.items.map(i => i.id));
-    const newItems     = templates.filter(t => !existingIds.has(t.id));
-    if (newItems.length) {
-      await updateDoc(ref, {
-        items: [
-          ...record.items,
-          ...newItems.map(t => ({ id: t.id, title: t.title, done: false, ...(t.dur ? { dur: t.dur, unit: t.unit } : {}) })),
-        ],
-      });
-    }
+    const items = templates.map(t => ({
+      id: t.id, title: t.title, done: false,
+      ...(t.dur ? { dur: t.dur, unit: t.unit } : {}),
+    }));
+    await setDoc(ref, { date: today, items, allDone: false });
+    return;
   }
+
+  const record = snap.data();
+
+  // Remove items whose template was deleted; sync dur/unit from current template
+  const keptItems = record.items
+    .filter(i => templateMap.has(i.id))
+    .map(i => {
+      const tmpl = templateMap.get(i.id);
+      const base = { id: i.id, title: i.title, done: i.done };
+      if (tmpl.dur) { base.dur = tmpl.dur; base.unit = tmpl.unit; }
+      return base;
+    });
+
+  // Add items for templates not yet in record
+  const keptIds  = new Set(keptItems.map(i => i.id));
+  const newItems = templates
+    .filter(t => !keptIds.has(t.id))
+    .map(t => ({ id: t.id, title: t.title, done: false, ...(t.dur ? { dur: t.dur, unit: t.unit } : {}) }));
+
+  const hadDeletion = keptItems.length < record.items.length;
+  const hadAddition = newItems.length > 0;
+  const hadDurSync  = keptItems.some(item => {
+    const orig = record.items.find(r => r.id === item.id);
+    return orig && (item.dur !== orig.dur || item.unit !== orig.unit);
+  });
+
+  if (!hadDeletion && !hadAddition && !hadDurSync) return;
+
+  const updatedItems = [...keptItems, ...newItems];
+  await updateDoc(ref, {
+    items:   updatedItems,
+    allDone: updatedItems.length > 0 && updatedItems.every(i => i.done),
+  });
 }
 
 async function checkAndUpdateStreak(uid) {
