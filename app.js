@@ -19,17 +19,57 @@ if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
 
 // ── Module-level state ─────────────────────────────────────────────────────
 let auth, db;
+let quill = null;
 let unsubTasks = null;
 let unsubNotes = null;
 let currentNoteId = null;
 let saveTimer = null;
 
-// ── App init ───────────────────────────────────────────────────────────────
+// Quill toolbar — matches Blogspot editor feature set
+const TOOLBAR = [
+  [{ header: [1, 2, 3, 4, false] }],
+  [{ font: [] }],
+  [{ size: ['small', false, 'large', 'huge'] }],
+  ['bold', 'italic', 'underline', 'strike'],
+  [{ color: [] }, { background: [] }],
+  [{ align: [] }],
+  [{ list: 'ordered' }, { list: 'bullet' }],
+  [{ indent: '-1' }, { indent: '+1' }],
+  ['blockquote', 'code-block'],
+  ['link', 'image'],
+  ['clean'],
+];
+
+// ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   const app      = initializeApp(firebaseConfig);
   auth           = getAuth(app);
   db             = getFirestore(app);
   const provider = new GoogleAuthProvider();
+
+  // Initialize Quill editor
+  quill = new Quill('#quill-editor', {
+    theme: 'snow',
+    modules: { toolbar: TOOLBAR },
+    placeholder: '開始寫備忘錄…',
+  });
+
+  // Custom image handler — insert by URL (avoids large base64 in Firestore)
+  quill.getModule('toolbar').addHandler('image', () => {
+    const url = prompt('請輸入圖片網址（URL）：');
+    if (url && url.trim()) {
+      const range = quill.getSelection() ?? { index: quill.getLength() };
+      quill.insertEmbed(range.index, 'image', url.trim(), 'user');
+    }
+  });
+
+  // Auto-save on content change
+  quill.on('text-change', scheduleSave);
+
+  // Ctrl+S / Cmd+S to save
+  document.getElementById('quill-editor').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); doSave(); }
+  });
 
   // Auth state
   onAuthStateChanged(auth, user => {
@@ -87,18 +127,9 @@ function init() {
   document.getElementById('new-note-btn').addEventListener('click', createNote);
   document.getElementById('back-to-notes').addEventListener('click', () => closeEditor());
   document.getElementById('delete-note-btn').addEventListener('click', deleteCurrentNote);
-  document.getElementById('edit-mode-btn').addEventListener('click', () => setEditorMode('edit'));
-  document.getElementById('preview-mode-btn').addEventListener('click', () => setEditorMode('preview'));
 
-  // Auto-save
+  // Auto-save on title change
   document.getElementById('note-title').addEventListener('input', scheduleSave);
-  document.getElementById('note-content').addEventListener('input', scheduleSave);
-
-  // Keyboard shortcuts in textarea
-  document.getElementById('note-content').addEventListener('keydown', handleEditorKey);
-
-  // Build toolbar
-  setupToolbar();
 }
 
 // ── Auth UI ────────────────────────────────────────────────────────────────
@@ -138,9 +169,9 @@ function switchTab(tab) {
 function subscribeToTasks(uid) {
   if (unsubTasks) unsubTasks();
   const q = query(collection(db, 'users', uid, 'tasks'), orderBy('createdAt', 'asc'));
-  unsubTasks = onSnapshot(q, snap =>
-    renderTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-    err => console.error(err)
+  unsubTasks = onSnapshot(q,
+    snap => renderTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err  => console.error(err)
   );
 }
 
@@ -174,9 +205,7 @@ function renderTasks(tasks) {
   });
 
   const total   = mins.reduce((a, b) => a + b, 0);
-  const timeStr = total >= 60
-    ? `${+(total / 60).toPrecision(3)} 小時`
-    : `${+total.toPrecision(3)} 分鐘`;
+  const timeStr = total >= 60 ? `${+(total/60).toPrecision(3)} 小時` : `${+total.toPrecision(3)} 分鐘`;
   status.textContent = `共 ${tasks.length} 項任務 · 預估總時間 ${timeStr}`;
 }
 
@@ -190,16 +219,15 @@ window.__del = async taskId => {
 function subscribeToNotes(uid) {
   if (unsubNotes) unsubNotes();
   const q = query(collection(db, 'users', uid, 'notes'), orderBy('updatedAt', 'desc'));
-  unsubNotes = onSnapshot(q, snap =>
-    renderNotesList(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-    err => console.error(err)
+  unsubNotes = onSnapshot(q,
+    snap => renderNotesList(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err  => console.error(err)
   );
 }
 
 function renderNotesList(notes) {
   const list = document.getElementById('notes-list');
-  document.getElementById('notes-count').textContent =
-    notes.length ? `${notes.length} 則筆記` : '';
+  document.getElementById('notes-count').textContent = notes.length ? `${notes.length} 則筆記` : '';
   list.innerHTML = '';
 
   if (!notes.length) {
@@ -209,7 +237,7 @@ function renderNotesList(notes) {
 
   notes.forEach(note => {
     const title   = note.title || '無標題';
-    const preview = stripMd(note.content || '').slice(0, 100);
+    const preview = htmlToPlain(note.content || '').slice(0, 100);
     const date    = note.updatedAt?.toDate ? fmtDate(note.updatedAt.toDate()) : '';
     const card    = document.createElement('div');
     card.className = 'note-card';
@@ -228,33 +256,47 @@ async function createNote() {
   const user = auth.currentUser;
   if (!user) return;
   const ref = await addDoc(collection(db, 'users', user.uid, 'notes'), {
-    title: '', content: '',
+    title: '', content: '', contentType: 'html',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  openNote({ id: ref.id, title: '', content: '' });
+  openNote({ id: ref.id, title: '', content: '', contentType: 'html' });
 }
 
 function openNote(note) {
   currentNoteId = note.id;
-  document.getElementById('note-title').value   = note.title   || '';
-  document.getElementById('note-content').value = note.content || '';
+  document.getElementById('note-title').value = note.title || '';
   document.getElementById('editor-status').textContent = '';
+
+  // Load content into Quill
+  // Old notes (Markdown) are detected by absence of contentType field
+  let html = note.content || '';
+  if (html && note.contentType !== 'html') {
+    // Convert legacy Markdown to HTML
+    html = window.marked.parse(html, { gfm: true, breaks: true });
+  }
+  quill.root.innerHTML = DOMPurify.sanitize(html, {
+    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['allowfullscreen', 'frameborder', 'src'],
+  });
+
   document.getElementById('notes-list-pane').hidden = true;
   document.getElementById('editor-pane').hidden     = false;
-  setEditorMode('edit');
-  // Focus title if empty, else content
-  const target = note.title ? 'note-content' : 'note-title';
-  document.getElementById(target).focus();
+
+  // Focus appropriately
+  setTimeout(() => {
+    if (!note.title) document.getElementById('note-title').focus();
+    else { quill.focus(); quill.setSelection(quill.getLength(), 0); }
+  }, 50);
 }
 
 async function closeEditor() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   if (currentNoteId && auth.currentUser) {
     const title   = document.getElementById('note-title').value.trim();
-    const content = document.getElementById('note-content').value.trim();
-    if (!title && !content) {
-      // Empty note — delete it silently
+    const content = quill.root.innerHTML;
+    const isEmpty = !title && isQuillEmpty(content);
+    if (isEmpty) {
       await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'notes', currentNoteId));
     } else {
       await doSave();
@@ -285,11 +327,12 @@ async function doSave() {
   saveTimer = null;
   if (!currentNoteId || !auth.currentUser) return;
   const title   = document.getElementById('note-title').value.trim();
-  const content = document.getElementById('note-content').value;
+  const content = quill.root.innerHTML;
   try {
     await updateDoc(doc(db, 'users', auth.currentUser.uid, 'notes', currentNoteId), {
       title: title || '無標題',
       content,
+      contentType: 'html',
       updatedAt: serverTimestamp(),
     });
     document.getElementById('editor-status').textContent = '已儲存';
@@ -299,163 +342,26 @@ async function doSave() {
   }
 }
 
-function setEditorMode(mode) {
-  const isEdit = mode === 'edit';
-  document.getElementById('note-content').hidden  = !isEdit;
-  document.getElementById('note-preview').hidden  = isEdit;
-  document.getElementById('edit-mode-btn').classList.toggle('active', isEdit);
-  document.getElementById('preview-mode-btn').classList.toggle('active', !isEdit);
-
-  if (!isEdit) {
-    const raw  = document.getElementById('note-content').value;
-    const html = DOMPurify.sanitize(
-      window.marked.parse(raw, { gfm: true, breaks: true }),
-      { ADD_TAGS: ['input'], ADD_ATTR: ['type', 'checked', 'disabled'] }
-    );
-    const preview = document.getElementById('note-preview');
-    preview.innerHTML = html;
-    preview.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.disabled = true; });
-  }
-}
-
-// ── Markdown toolbar ───────────────────────────────────────────────────────
-function setupToolbar() {
-  const bar = document.getElementById('md-toolbar');
-
-  const groups = [
-    [
-      { label: 'H1',   title: '標題 1',     fn: () => insertLine('# ') },
-      { label: 'H2',   title: '標題 2',     fn: () => insertLine('## ') },
-      { label: 'H3',   title: '標題 3',     fn: () => insertLine('### ') },
-    ],
-    [
-      { label: 'B',    title: '粗體 Ctrl+B', fn: () => wrap('**', '**') },
-      { label: 'I',    title: '斜體 Ctrl+I', fn: () => wrap('*',  '*'),  italic: true },
-      { label: 'S',    title: '刪除線',      fn: () => wrap('~~', '~~') },
-    ],
-    [
-      { label: '❝',    title: '引用',        fn: () => insertLine('> ') },
-      { label: '`',    title: '行內程式碼',  fn: () => wrap('`',  '`') },
-      { label: '</>',  title: '程式碼區塊',  fn: () => wrapBlock() },
-    ],
-    [
-      { label: '•',    title: '項目清單',    fn: () => insertLine('- ') },
-      { label: '1.',   title: '編號清單',    fn: () => insertLine('1. ') },
-      { label: '☐',   title: '待辦項目',    fn: () => insertLine('- [ ] ') },
-    ],
-    [
-      { label: '🔗',   title: '插入連結',    fn: () => insertLink() },
-      { label: '—',   title: '分隔線',      fn: () => insertHR() },
-    ],
-  ];
-
-  groups.forEach((group, gi) => {
-    if (gi > 0) {
-      const sep = document.createElement('span');
-      sep.className = 'tb-sep';
-      bar.appendChild(sep);
-    }
-    group.forEach(({ label, title, fn, italic }) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'tb-btn';
-      btn.textContent = label;
-      btn.title = title;
-      if (italic) btn.dataset.type = 'italic';
-      btn.addEventListener('click', fn);
-      bar.appendChild(btn);
-    });
-  });
-}
-
-// ── Editor text manipulation ───────────────────────────────────────────────
-const ta = () => document.getElementById('note-content');
-
-function wrap(before, after) {
-  const el = ta(), s = el.selectionStart, e = el.selectionEnd;
-  const sel = el.value.slice(s, e);
-  el.value = el.value.slice(0, s) + before + sel + after + el.value.slice(e);
-  el.selectionStart = s + before.length;
-  el.selectionEnd   = s + before.length + sel.length;
-  el.focus(); scheduleSave();
-}
-
-function insertLine(prefix) {
-  const el = ta(), s = el.selectionStart;
-  const ls = el.value.lastIndexOf('\n', s - 1) + 1;
-  el.value = el.value.slice(0, ls) + prefix + el.value.slice(ls);
-  el.selectionStart = el.selectionEnd = s + prefix.length;
-  el.focus(); scheduleSave();
-}
-
-function wrapBlock() {
-  const el = ta(), s = el.selectionStart, e = el.selectionEnd;
-  const sel = el.value.slice(s, e);
-  const before = '```\n', after = '\n```';
-  el.value = el.value.slice(0, s) + before + sel + after + el.value.slice(e);
-  el.selectionStart = s + before.length;
-  el.selectionEnd   = s + before.length + sel.length;
-  el.focus(); scheduleSave();
-}
-
-function insertLink() {
-  const el = ta(), s = el.selectionStart, e = el.selectionEnd;
-  const sel = el.value.slice(s, e);
-  const text = sel || '連結文字';
-  const rep  = `[${text}](url)`;
-  el.value = el.value.slice(0, s) + rep + el.value.slice(e);
-  const us = s + text.length + 3;
-  el.selectionStart = us; el.selectionEnd = us + 3;
-  el.focus(); scheduleSave();
-}
-
-function insertHR() {
-  const el = ta(), s = el.selectionStart;
-  const hr = '\n\n---\n\n';
-  el.value = el.value.slice(0, s) + hr + el.value.slice(s);
-  el.selectionStart = el.selectionEnd = s + hr.length;
-  el.focus(); scheduleSave();
-}
-
-function handleEditorKey(e) {
-  const el = e.target;
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const s = el.selectionStart, end = el.selectionEnd;
-    el.value = el.value.slice(0, s) + '  ' + el.value.slice(end);
-    el.selectionStart = el.selectionEnd = s + 2;
-    scheduleSave();
-    return;
-  }
-  if (e.ctrlKey || e.metaKey) {
-    if (e.key === 'b') { e.preventDefault(); wrap('**', '**'); }
-    if (e.key === 'i') { e.preventDefault(); wrap('*', '*'); }
-    if (e.key === 's') { e.preventDefault(); doSave(); }
-  }
-}
-
 // ── Utilities ──────────────────────────────────────────────────────────────
+function isQuillEmpty(html) {
+  return !html || html === '<p><br></p>' || html === '<p></p>';
+}
+
+function htmlToPlain(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return (div.textContent || div.innerText || '').replace(/\s+/g, ' ').trim();
+}
+
 function toMin(duration, unit) { return unit === '小時' ? duration * 60 : duration; }
 
 function esc(s) {
-  return String(s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function fmtDate(d) {
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function stripMd(s) {
-  return s
-    .replace(/#{1,6}\s/g, '')
-    .replace(/\*\*|__|\*|_|~~|`{1,3}/g, '')
-    .replace(/^[-*>\d]+[.)]\s/gm, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n+/g, ' ')
-    .trim();
 }
 
 // ── Service worker ─────────────────────────────────────────────────────────
