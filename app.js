@@ -17,14 +17,6 @@ let unsubNotes = null;
 let currentNoteId = null;
 let saveTimer = null;
 
-// ── Config check ────────────────────────────────────────────────────────────
-if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
-  document.getElementById('setup-screen').hidden = false;
-  document.getElementById('app').hidden = true;
-} else {
-  init();
-}
-
 // Quill toolbar — matches Blogspot editor feature set
 const TOOLBAR = [
   [{ header: [1, 2, 3, 4, false] }],
@@ -39,6 +31,14 @@ const TOOLBAR = [
   ['link', 'image'],
   ['clean'],
 ];
+
+// ── Config check ────────────────────────────────────────────────────────────
+if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
+  document.getElementById('setup-screen').hidden = false;
+  document.getElementById('app').hidden = true;
+} else {
+  init();
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
