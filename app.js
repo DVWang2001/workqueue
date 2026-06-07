@@ -127,6 +127,14 @@ function init() {
   document.getElementById('new-note-btn').addEventListener('click', createNote);
   document.getElementById('back-to-notes').addEventListener('click', () => closeEditor());
   document.getElementById('delete-note-btn').addEventListener('click', deleteCurrentNote);
+  document.getElementById('share-note-btn').addEventListener('click', openShareModal);
+
+  // Share modal
+  document.getElementById('share-backdrop').addEventListener('click', closeShareModal);
+  document.getElementById('share-close').addEventListener('click', closeShareModal);
+  document.querySelectorAll('.share-btn').forEach(btn =>
+    btn.addEventListener('click', () => handleShare(btn.dataset.platform))
+  );
 
   // Auto-save on title change
   document.getElementById('note-title').addEventListener('input', scheduleSave);
@@ -340,6 +348,90 @@ async function doSave() {
     document.getElementById('editor-status').textContent = '儲存失敗';
     console.error(err);
   }
+}
+
+// ── Share ──────────────────────────────────────────────────────────────────
+function openShareModal() {
+  // Hide native share button if browser doesn't support it
+  const nativeBtn = document.querySelector('[data-platform="native"]');
+  if (nativeBtn) nativeBtn.style.display = navigator.share ? '' : 'none';
+  document.getElementById('share-modal').hidden = false;
+}
+
+function closeShareModal() {
+  document.getElementById('share-modal').hidden = true;
+}
+
+async function handleShare(platform) {
+  const title  = document.getElementById('note-title').value.trim() || '備忘錄';
+  const html   = quill.root.innerHTML;
+  const plain  = htmlToPlain(html);
+  const full   = title + (plain ? '\n\n' + plain : '');
+
+  switch (platform) {
+    case 'copy':
+      await copyToClipboard(plain);
+      showToast('已複製文字到剪貼簿');
+      break;
+
+    case 'threads':
+      openUrl('https://www.threads.net/intent/post?text=' + enc(full.slice(0, 500)));
+      break;
+
+    case 'twitter':
+      openUrl('https://x.com/intent/post?text=' + enc(full.slice(0, 270)));
+      break;
+
+    case 'facebook':
+      await copyToClipboard(full);
+      openUrl('https://www.facebook.com/');
+      showToast('已複製內容，請在 Facebook 建立貼文後貼上');
+      break;
+
+    case 'blogger':
+      await copyToClipboard(html);
+      openUrl('https://www.blogger.com/blog/post/create');
+      showToast('已複製 HTML，請在 Blogger 切換到 HTML 模式後貼上');
+      break;
+
+    case 'line':
+      openUrl('https://line.me/R/msg/text/?' + enc(full.slice(0, 500)));
+      break;
+
+    case 'native':
+      if (!navigator.share) { showToast('您的瀏覽器不支援系統分享'); break; }
+      try { await navigator.share({ title, text: plain }); }
+      catch (e) { if (e.name !== 'AbortError') showToast('分享失敗'); }
+      break;
+  }
+
+  closeShareModal();
+}
+
+function openUrl(url) { window.open(url, '_blank', 'noopener'); }
+function enc(s) { return encodeURIComponent(s); }
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.hidden = false;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
