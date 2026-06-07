@@ -61,6 +61,7 @@ service cloud.firestore {
     <nav id="main-nav" hidden>
       <button class="nav-tab active" data-tab="tasks">待辦事項</button>
       <button class="nav-tab"        data-tab="notes">備忘錄</button>
+      <button class="nav-tab"        data-tab="ledger">記帳</button>
     </nav>
 
     <!-- ── 待辦事項 ──────────────────────────────────────────────────────── -->
@@ -109,6 +110,26 @@ service cloud.firestore {
         <div id="quill-editor"></div>
       </div>
 
+    </div>
+
+    <!-- ── 記帳 ──────────────────────────────────────────────────────────── -->
+    <div id="ledger-view" hidden>
+      <form id="expense-form" autocomplete="off">
+        <div class="form-row">
+          <input id="expense-desc" type="text" placeholder="支出項目…" required>
+          <button type="button" id="expense-voice-btn" class="voice-btn" title="語音輸入">🎤</button>
+          <input id="expense-amount" type="number" placeholder="金額（元）" min="1" step="1" required>
+          <input id="expense-date" type="date" required>
+          <button type="submit" id="expense-add-btn">新增</button>
+        </div>
+      </form>
+      <div id="ledger-summary" hidden>
+        <span id="ledger-avg"></span>
+      </div>
+      <div id="chart-wrap" hidden>
+        <canvas id="expense-chart"></canvas>
+      </div>
+      <div id="expense-list"></div>
     </div>
 
   </div>
@@ -161,6 +182,7 @@ service cloud.firestore {
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>

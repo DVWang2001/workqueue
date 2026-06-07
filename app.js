@@ -14,6 +14,8 @@ let auth, db;
 let quill = null;
 let unsubTasks = null;
 let unsubNotes = null;
+let unsubExpenses = null;
+let expenseChart = null;
 let currentNoteId = null;
 let saveTimer = null;
 
@@ -78,10 +80,12 @@ function init() {
       showApp(user);
     } else {
       showLogin();
-      if (unsubTasks) { unsubTasks(); unsubTasks = null; }
-      if (unsubNotes) { unsubNotes(); unsubNotes = null; }
+      if (unsubTasks)    { unsubTasks();    unsubTasks    = null; }
+      if (unsubNotes)    { unsubNotes();    unsubNotes    = null; }
+      if (unsubExpenses) { unsubExpenses(); unsubExpenses = null; }
       renderTasks([]);
       renderNotesList([]);
+      renderExpenseList([]);
     }
   });
 
@@ -147,6 +151,39 @@ function init() {
     });
   });
 
+  // Expense form
+  document.getElementById('expense-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const user = auth.currentUser;
+    if (!user) return;
+    const desc   = document.getElementById('expense-desc').value.trim();
+    const amount = parseFloat(document.getElementById('expense-amount').value);
+    const date   = document.getElementById('expense-date').value;
+    if (!desc || !(amount > 0) || !date) return;
+    const btn = document.getElementById('expense-add-btn');
+    btn.disabled = true;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'expenses'), {
+        desc, amount, date, createdAt: serverTimestamp(),
+      });
+      document.getElementById('expense-desc').value   = '';
+      document.getElementById('expense-amount').value = '';
+      document.getElementById('expense-desc').focus();
+    } catch (err) {
+      alert('新增失敗：' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Voice input — expense
+  document.getElementById('expense-voice-btn').addEventListener('click', () => {
+    startVoice(document.getElementById('expense-voice-btn'), text => {
+      document.getElementById('expense-desc').value = text;
+      document.getElementById('expense-amount').focus();
+    });
+  });
+
   // Voice input — note
   document.getElementById('note-voice-btn').addEventListener('click', () => {
     startVoice(document.getElementById('note-voice-btn'), text => {
@@ -167,8 +204,10 @@ function showApp(user) {
   document.getElementById('add-form').hidden  = false;
   document.getElementById('divider').hidden   = false;
   document.getElementById('main-nav').hidden  = false;
+  document.getElementById('expense-date').value = new Date().toISOString().slice(0, 10);
   subscribeToTasks(user.uid);
   subscribeToNotes(user.uid);
+  subscribeToExpenses(user.uid);
 }
 
 function showLogin() {
@@ -185,9 +224,10 @@ function switchTab(tab) {
   document.querySelectorAll('.nav-tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab)
   );
-  document.getElementById('tasks-view').hidden = tab !== 'tasks';
-  document.getElementById('notes-view').hidden = tab !== 'notes';
-  document.getElementById('status-bar').hidden = tab !== 'tasks';
+  document.getElementById('tasks-view').hidden  = tab !== 'tasks';
+  document.getElementById('notes-view').hidden  = tab !== 'notes';
+  document.getElementById('ledger-view').hidden = tab !== 'ledger';
+  document.getElementById('status-bar').hidden  = tab !== 'tasks';
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
@@ -450,6 +490,134 @@ function showToast(msg) {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
 }
+
+// ── Expenses ───────────────────────────────────────────────────────────────
+function subscribeToExpenses(uid) {
+  if (unsubExpenses) unsubExpenses();
+  const q = query(collection(db, 'users', uid, 'expenses'), orderBy('createdAt', 'desc'));
+  unsubExpenses = onSnapshot(q,
+    snap => {
+      const expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderExpenseList(expenses);
+      renderChart(expenses);
+    },
+    err => console.error(err)
+  );
+}
+
+function renderExpenseList(expenses) {
+  const list = document.getElementById('expense-list');
+  list.innerHTML = '';
+  if (!expenses.length) {
+    list.innerHTML = '<p class="empty-msg">沒有支出記錄，新增第一筆吧！</p>';
+    return;
+  }
+  const sorted = [...expenses].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
+  sorted.forEach(exp => {
+    const card = document.createElement('div');
+    card.className = 'expense-card';
+    card.innerHTML = `
+      <div class="expense-left">
+        <span class="expense-date">${esc(exp.date || '')}</span>
+        <span class="expense-desc">${esc(exp.desc || '')}</span>
+      </div>
+      <div class="expense-right">
+        <span class="expense-amount">$${Number(exp.amount || 0).toLocaleString()}</span>
+        <button class="expense-del-btn" onclick="__delExp('${exp.id}')">✕</button>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function renderChart(expenses) {
+  const map = {};
+  expenses.forEach(e => {
+    if (!e.date) return;
+    const month = e.date.slice(0, 7);
+    map[month] = (map[month] || 0) + (e.amount || 0);
+  });
+
+  const months = Object.keys(map).sort();
+  const totals = months.map(m => map[m]);
+  const total  = totals.reduce((a, b) => a + b, 0);
+  const avg    = totals.length ? Math.round(total / totals.length) : 0;
+
+  const summaryEl = document.getElementById('ledger-summary');
+  const chartWrap = document.getElementById('chart-wrap');
+
+  if (!months.length) {
+    summaryEl.hidden = true;
+    chartWrap.hidden = true;
+    if (expenseChart) { expenseChart.destroy(); expenseChart = null; }
+    return;
+  }
+
+  summaryEl.hidden = false;
+  chartWrap.hidden = false;
+  document.getElementById('ledger-avg').textContent =
+    `月平均花費：$${avg.toLocaleString()}　　累計總支出：$${Math.round(total).toLocaleString()}`;
+
+  const labels = months.map(m => {
+    const [y, mo] = m.split('-');
+    return `${y}年${parseInt(mo)}月`;
+  });
+
+  const ctx = document.getElementById('expense-chart').getContext('2d');
+  if (expenseChart) expenseChart.destroy();
+
+  expenseChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '月支出',
+          data: totals,
+          borderColor: '#4a6cf7',
+          backgroundColor: 'rgba(74,108,247,0.12)',
+          tension: 0.35,
+          fill: true,
+          pointBackgroundColor: '#4a6cf7',
+          pointRadius: 5,
+          pointHoverRadius: 7,
+        },
+        {
+          label: `月平均 $${avg.toLocaleString()}`,
+          data: months.map(() => avg),
+          borderColor: '#f59e0b',
+          borderDash: [6, 3],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: '#50507a', font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => `$${Math.round(c.parsed.y).toLocaleString()}` } },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { callback: v => '$' + Math.round(v).toLocaleString(), color: '#50507a' },
+          grid: { color: '#dcdcec' },
+        },
+        x: { ticks: { color: '#50507a' }, grid: { color: '#dcdcec' } },
+      },
+    },
+  });
+}
+
+window.__delExp = async id => {
+  const user = auth.currentUser;
+  if (!user) return;
+  await deleteDoc(doc(db, 'users', user.uid, 'expenses', id));
+};
 
 // ── Voice Input ────────────────────────────────────────────────────────────
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
