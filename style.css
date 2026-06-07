@@ -34,7 +34,7 @@ body {
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 header {
-  background: var(--header);
+  background: #ff5722;
   border-bottom: 1px solid var(--border);
   padding: 10px 18px;
   display: flex;
