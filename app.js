@@ -401,6 +401,7 @@ function startEditorVVFix() {
   const vv = window.visualViewport;
   if (!vv) return;
   const editorPane = document.getElementById('editor-pane');
+  const baselineH  = vv.height; // height before keyboard opens
 
   function scrollCursorIntoView() {
     const editorScroll = document.getElementById('editor-scroll');
@@ -418,15 +419,18 @@ function startEditorVVFix() {
   function update() {
     if (!editorPane) return;
     const offsetTop = vv.offsetTop || 0;
+    // iOS: layout viewport scrolls up (offsetTop > 0)
+    // Android: visual viewport shrinks (offsetTop stays 0, but height drops)
+    const keyboardOpen = offsetTop > 0 || vv.height < baselineH * 0.8;
     editorPane.style.transform = offsetTop ? `translateY(${offsetTop}px)` : '';
-    editorPane.style.height    = offsetTop ? `${vv.height}px` : '';
-    // iOS undid its own scroll-to-cursor when we applied translateY; redo it ourselves
-    if (offsetTop > 0) requestAnimationFrame(scrollCursorIntoView);
+    editorPane.style.height    = keyboardOpen ? `${vv.height}px` : '';
+    if (keyboardOpen) requestAnimationFrame(scrollCursorIntoView);
   }
 
   function onSelectionChange(range) {
-    // Keyboard already open but cursor moved to a new (possibly lower) position
-    if (range && (vv.offsetTop || 0) > 0) requestAnimationFrame(scrollCursorIntoView);
+    const offsetTop = vv.offsetTop || 0;
+    const keyboardOpen = offsetTop > 0 || vv.height < baselineH * 0.8;
+    if (range && keyboardOpen) requestAnimationFrame(scrollCursorIntoView);
   }
 
   vv.addEventListener('scroll', update);
