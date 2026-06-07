@@ -1056,7 +1056,7 @@ function initPullToRefresh() {
   let startY = 0, startScrollTop = 0, delta = 0, active = false;
 
   function getActiveScrollTop() {
-    for (const id of ['task-scroll-area', 'daily-view', 'notes-list', 'expense-list']) {
+    for (const id of ['task-scroll-area', 'daily-view', 'notes-list', 'expense-list', 'editor-scroll']) {
       const node = document.getElementById(id);
       if (node && node.offsetParent !== null) return node.scrollTop;
     }
