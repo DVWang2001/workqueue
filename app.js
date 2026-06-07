@@ -409,18 +409,29 @@ function startEditorVVFix() {
     // quill.getSelection() may return null during viewport resize; fall back to cached
     const qSel = quill.getSelection() || lastSel;
     if (!qSel) return;
-    // getBounds returns position relative to #quill-editor, accounting for internal scroll
-    const bounds = quill.getBounds(qSel.index, qSel.length);
-    if (!bounds) return;
-    const qlEl = document.getElementById('quill-editor');
-    if (!qlEl) return;
-    // qlRect.top is the viewport-y of quill-editor's top (negative if scrolled past)
-    const qlRect = qlEl.getBoundingClientRect();
-    const cursorBottom = qlRect.top + bounds.bottom;
+
+    // quill.getBounds() calls nativeRange.getBoundingClientRect() which returns height:0
+    // for a collapsed cursor — use the leaf blot's DOM node directly instead
+    let lineEl;
+    try {
+      const [blot] = quill.scroll.leaf(qSel.index);
+      if (blot && blot.domNode) {
+        const node = blot.domNode.nodeType === Node.TEXT_NODE
+          ? blot.domNode.parentElement : blot.domNode;
+        // Walk up to the direct child of .ql-editor (the line block element)
+        lineEl = node && node.closest
+          ? (node.closest('.ql-editor > *') || node) : node;
+      }
+    } catch (_) { /* ignore */ }
+
+    if (!lineEl) lineEl = document.querySelector('#quill-editor .ql-editor > :last-child');
+    if (!lineEl) return;
+
+    const rect = lineEl.getBoundingClientRect();
     const margin = 24;
-    if (cursorBottom > vv.height - margin) {
+    if (rect.bottom > vv.height - margin) {
       const editorScroll = document.getElementById('editor-scroll');
-      if (editorScroll) editorScroll.scrollTop += cursorBottom - (vv.height - margin);
+      if (editorScroll) editorScroll.scrollTop += rect.bottom - (vv.height - margin);
     }
   }
 
