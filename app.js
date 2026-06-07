@@ -402,16 +402,19 @@ function startEditorVVFix() {
   if (!vv) return;
   const editorPane = document.getElementById('editor-pane');
   function update() {
-    if (editorPane) {
-      editorPane.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
-    }
+    if (!editorPane) return;
+    const offsetTop = vv.offsetTop || 0;
+    // Counteract iOS layout-viewport scroll so toolbar stays on screen
+    editorPane.style.transform = offsetTop ? `translateY(${offsetTop}px)` : '';
+    // Constrain height to visual viewport so #editor-scroll scrolls cursor above keyboard
+    editorPane.style.height = offsetTop ? `${vv.height}px` : '';
   }
   vv.addEventListener('scroll', update);
   vv.addEventListener('resize', update);
   _vvFixCleanup = () => {
     vv.removeEventListener('scroll', update);
     vv.removeEventListener('resize', update);
-    if (editorPane) editorPane.style.transform = '';
+    if (editorPane) { editorPane.style.transform = ''; editorPane.style.height = ''; }
   };
 }
 

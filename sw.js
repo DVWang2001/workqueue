@@ -1,4 +1,4 @@
-const CACHE = 'workqueue-v6';
+const CACHE = 'workqueue-v7';
 const SHELL = ['./', './index.html', './style.css', './app.js',
                './firebase-config.js', './manifest.json', './icon.svg'];
 
