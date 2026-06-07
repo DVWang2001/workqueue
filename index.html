@@ -94,6 +94,13 @@ service cloud.firestore {
       <form id="daily-form" autocomplete="off">
         <div class="form-row">
           <input id="daily-input" type="text" placeholder="新增每日必辦事項…" required>
+          <div class="dur-group">
+            <input id="daily-dur-input" type="number" placeholder="時間" min="0.5" step="0.5">
+            <select id="daily-unit-select">
+              <option value="分鐘">分鐘</option>
+              <option value="小時">小時</option>
+            </select>
+          </div>
           <button type="submit" id="daily-add-btn">新增</button>
         </div>
       </form>

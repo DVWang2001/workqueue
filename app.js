@@ -218,15 +218,19 @@ function init() {
     e.preventDefault();
     const user = auth.currentUser;
     if (!user) return;
-    const title = document.getElementById('daily-input').value.trim();
+    const title  = document.getElementById('daily-input').value.trim();
     if (!title) return;
+    const durVal = parseFloat(document.getElementById('daily-dur-input').value);
+    const unit   = document.getElementById('daily-unit-select').value;
+    const dur    = Number.isFinite(durVal) && durVal > 0 ? durVal : null;
     const btn = document.getElementById('daily-add-btn');
     btn.disabled = true;
     try {
       await addDoc(collection(db, 'users', user.uid, 'dailyTemplates'), {
-        title, createdAt: serverTimestamp(),
+        title, ...(dur ? { dur, unit } : {}), createdAt: serverTimestamp(),
       });
       document.getElementById('daily-input').value = '';
+      document.getElementById('daily-dur-input').value = '';
       document.getElementById('daily-input').focus();
     } catch (err) {
       alert('新增失敗：' + err.message);
@@ -852,7 +856,7 @@ async function ensureTodayRecord(uid, templates) {
   if (!snap.exists()) {
     await setDoc(ref, {
       date:    today,
-      items:   templates.map(t => ({ id: t.id, title: t.title, done: false })),
+      items:   templates.map(t => ({ id: t.id, title: t.title, done: false, ...(t.dur ? { dur: t.dur, unit: t.unit } : {}) })),
       allDone: false,
     });
   } else {
@@ -863,7 +867,7 @@ async function ensureTodayRecord(uid, templates) {
       await updateDoc(ref, {
         items: [
           ...record.items,
-          ...newItems.map(t => ({ id: t.id, title: t.title, done: false })),
+          ...newItems.map(t => ({ id: t.id, title: t.title, done: false, ...(t.dur ? { dur: t.dur, unit: t.unit } : {}) })),
         ],
       });
     }
@@ -977,6 +981,7 @@ function renderDailyTemplateList(templates) {
     <div class="daily-template-item">
       <span class="daily-tmpl-icon">☑</span>
       <span class="daily-tmpl-title">${esc(t.title)}</span>
+      ${t.dur ? `<span class="daily-tmpl-dur">⏱ ${t.dur} ${esc(t.unit)}</span>` : ''}
       <button class="daily-tmpl-del" onclick="__delDailyTmpl('${esc(t.id)}')" title="刪除">✕</button>
     </div>
   `).join('');
@@ -1003,6 +1008,7 @@ function renderDailyPinnedItems() {
         <span class="daily-item-title">${esc(item.title)}</span>
       </div>
       <div class="daily-item-right">
+        ${item.dur ? `<span class="daily-item-dur">⏱ ${item.dur} ${esc(item.unit)}</span>` : ''}
         <span class="daily-item-time">📅 ${esc(today)}</span>
         <button class="daily-check-btn" onclick="__toggleDaily(${i})">
           ${item.done ? '撤銷' : '完成 ✓'}

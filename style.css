@@ -641,6 +641,7 @@ hr.daily-hr { border: none; border-top: 1px solid var(--border); margin: 0 18px;
 }
 .daily-tmpl-icon  { font-size: 1.1rem; flex-shrink: 0; color: #d97706; }
 .daily-tmpl-title { flex: 1; font-size: 0.95rem; font-weight: 600; color: var(--text); }
+.daily-tmpl-dur   { font-size: 0.78rem; color: var(--subtext); flex-shrink: 0; }
 .daily-tmpl-del {
   background: transparent; border: 1px solid var(--border);
   color: var(--muted); border-radius: 6px; padding: 3px 8px;
@@ -680,6 +681,7 @@ hr.daily-hr { border: none; border-top: 1px solid var(--border); margin: 0 18px;
 }
 .daily-item-card.done .daily-item-title { text-decoration: line-through; color: var(--muted); }
 .daily-item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.daily-item-dur   { font-size: 0.72rem; color: var(--subtext); }
 .daily-item-time  { font-size: 0.7rem; color: #b45309; }
 
 .daily-check-btn {
