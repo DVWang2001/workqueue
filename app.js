@@ -383,14 +383,14 @@ async function handleShare(platform) {
       break;
 
     case 'facebook':
-      await copyToClipboard(full);
       openUrl('https://www.facebook.com/');
+      await copyToClipboard(full);
       showToast('已複製內容，請在 Facebook 建立貼文後貼上');
       break;
 
     case 'blogger':
-      await copyToClipboard(html);
       openUrl('https://www.blogger.com/blog/post/create');
+      await copyToClipboard(html);
       showToast('已複製 HTML，請在 Blogger 切換到 HTML 模式後貼上');
       break;
 
