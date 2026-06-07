@@ -5,8 +5,8 @@ import {
   GoogleAuthProvider, onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js';
 import {
-  getFirestore, collection, addDoc, deleteDoc, updateDoc,
-  doc, query, orderBy, onSnapshot, serverTimestamp,
+  getFirestore, collection, addDoc, deleteDoc, updateDoc, setDoc,
+  doc, query, orderBy, onSnapshot, serverTimestamp, getDoc,
 } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js';
 
 // ── Module-level state ─────────────────────────────────────────────────────
@@ -15,9 +15,16 @@ let quill = null;
 let unsubTasks = null;
 let unsubNotes = null;
 let unsubExpenses = null;
+let unsubDailyTemplates = null;
+let unsubTodayRecord    = null;
 let expenseChart = null;
 let currentNoteId = null;
 let saveTimer = null;
+let dailyTemplatesData = [];
+let todayRecordData    = null;
+let streakData         = { streak: 0, longest: 0, lastCheck: '', days: [] };
+let lastKnownDateUTC8  = '';
+let dailyDayCheckTimer = null;
 
 // Quill toolbar — matches Blogspot editor feature set
 const TOOLBAR = [
@@ -41,6 +48,8 @@ if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
 } else {
   init();
 }
+
+initPullToRefresh();
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
@@ -192,6 +201,28 @@ function init() {
       quill.setSelection(range.index + text.length);
     });
   });
+
+  // Daily must-do form
+  document.getElementById('daily-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const user = auth.currentUser;
+    if (!user) return;
+    const title = document.getElementById('daily-input').value.trim();
+    if (!title) return;
+    const btn = document.getElementById('daily-add-btn');
+    btn.disabled = true;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'dailyTemplates'), {
+        title, createdAt: serverTimestamp(),
+      });
+      document.getElementById('daily-input').value = '';
+      document.getElementById('daily-input').focus();
+    } catch (err) {
+      alert('新增失敗：' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 // ── Auth UI ────────────────────────────────────────────────────────────────
@@ -208,6 +239,22 @@ function showApp(user) {
   subscribeToTasks(user.uid);
   subscribeToNotes(user.uid);
   subscribeToExpenses(user.uid);
+  lastKnownDateUTC8 = getTodayUTC8();
+  subscribeToDailyTemplates(user.uid);
+  subscribeToTodayRecord(user.uid);
+  checkAndUpdateStreak(user.uid).catch(console.error);
+  if (!dailyDayCheckTimer) {
+    dailyDayCheckTimer = setInterval(() => {
+      const now = getTodayUTC8();
+      if (now !== lastKnownDateUTC8) {
+        lastKnownDateUTC8 = now;
+        if (auth.currentUser) {
+          subscribeToTodayRecord(auth.currentUser.uid);
+          checkAndUpdateStreak(auth.currentUser.uid).catch(console.error);
+        }
+      }
+    }, 60000);
+  }
 }
 
 function showLogin() {
@@ -217,6 +264,15 @@ function showLogin() {
   document.getElementById('divider').hidden   = true;
   document.getElementById('main-nav').hidden  = true;
   document.getElementById('status-bar').textContent = '';
+  if (unsubDailyTemplates) { unsubDailyTemplates(); unsubDailyTemplates = null; }
+  if (unsubTodayRecord)    { unsubTodayRecord();    unsubTodayRecord    = null; }
+  if (dailyDayCheckTimer)  { clearInterval(dailyDayCheckTimer); dailyDayCheckTimer = null; }
+  dailyTemplatesData = [];
+  todayRecordData    = null;
+  streakData         = { streak: 0, longest: 0, lastCheck: '', days: [] };
+  renderDailyPinnedItems();
+  renderDailyTemplateList([]);
+  renderStreakBanner();
 }
 
 // ── Tab navigation ─────────────────────────────────────────────────────────
@@ -225,6 +281,7 @@ function switchTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab)
   );
   document.getElementById('tasks-view').hidden  = tab !== 'tasks';
+  document.getElementById('daily-view').hidden  = tab !== 'daily';
   document.getElementById('notes-view').hidden  = tab !== 'notes';
   document.getElementById('ledger-view').hidden = tab !== 'ledger';
   document.getElementById('status-bar').hidden  = tab !== 'tasks';
@@ -663,6 +720,301 @@ function esc(s) {
 function fmtDate(d) {
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ── Daily Must-Do ──────────────────────────────────────────────────────────
+
+function getTodayUTC8() {
+  return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+}
+
+function subscribeToDailyTemplates(uid) {
+  if (unsubDailyTemplates) unsubDailyTemplates();
+  const q = query(collection(db, 'users', uid, 'dailyTemplates'), orderBy('createdAt', 'asc'));
+  unsubDailyTemplates = onSnapshot(q, snap => {
+    dailyTemplatesData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDailyTemplateList(dailyTemplatesData);
+    if (dailyTemplatesData.length) ensureTodayRecord(uid, dailyTemplatesData).catch(console.error);
+  }, console.error);
+}
+
+function subscribeToTodayRecord(uid) {
+  if (unsubTodayRecord) unsubTodayRecord();
+  const today = getTodayUTC8();
+  unsubTodayRecord = onSnapshot(
+    doc(db, 'users', uid, 'dailyRecords', today),
+    snap => {
+      todayRecordData = snap.exists() ? snap.data() : null;
+      renderDailyPinnedItems();
+      renderStreakBanner();
+    },
+    console.error
+  );
+}
+
+async function ensureTodayRecord(uid, templates) {
+  const today = getTodayUTC8();
+  const ref   = doc(db, 'users', uid, 'dailyRecords', today);
+  const snap  = await getDoc(ref);
+
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      date:    today,
+      items:   templates.map(t => ({ id: t.id, title: t.title, done: false })),
+      allDone: false,
+    });
+  } else {
+    const record       = snap.data();
+    const existingIds  = new Set(record.items.map(i => i.id));
+    const newItems     = templates.filter(t => !existingIds.has(t.id));
+    if (newItems.length) {
+      await updateDoc(ref, {
+        items: [
+          ...record.items,
+          ...newItems.map(t => ({ id: t.id, title: t.title, done: false })),
+        ],
+      });
+    }
+  }
+}
+
+async function checkAndUpdateStreak(uid) {
+  const today    = getTodayUTC8();
+  const streakRef = doc(db, 'users', uid, 'dailyMeta', 'streak');
+  const snap     = await getDoc(streakRef);
+  let data       = snap.exists()
+    ? snap.data()
+    : { streak: 0, longest: 0, lastCheck: '', days: [] };
+
+  if (data.lastCheck >= today) {
+    streakData = data;
+    renderStreakBanner();
+    return;
+  }
+
+  const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
+
+  if (!data.lastCheck || data.lastCheck >= yesterday) {
+    const updated = { ...data, lastCheck: today };
+    await setDoc(streakRef, updated);
+    streakData = updated;
+    renderStreakBanner();
+    return;
+  }
+
+  // Build date list: from (lastCheck + 1 day) to yesterday inclusive
+  const dates = [];
+  let cur = new Date(data.lastCheck + 'T00:00:00Z');
+  cur = new Date(cur.getTime() + 86400000);
+  const end = new Date(yesterday + 'T00:00:00Z');
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur = new Date(cur.getTime() + 86400000);
+  }
+
+  let { streak, longest, days } = data;
+  for (const dateStr of dates) {
+    const recSnap = await getDoc(doc(db, 'users', uid, 'dailyRecords', dateStr));
+    if (recSnap.exists()) {
+      const rec = recSnap.data();
+      if (rec.items && rec.items.length > 0) {
+        const done = !!rec.allDone;
+        streak  = done ? streak + 1 : 0;
+        longest = Math.max(longest, streak);
+        days    = [...(days || []).filter(d => d.date !== dateStr), { date: dateStr, done }];
+      }
+    }
+  }
+
+  days = (days || []).sort((a, b) => a.date.localeCompare(b.date)).slice(-14);
+  const updated = { streak, longest, lastCheck: today, days };
+  await setDoc(streakRef, updated);
+  streakData = updated;
+  renderStreakBanner();
+}
+
+function renderStreakBanner() {
+  const el = document.getElementById('streak-banner');
+  if (!el) return;
+
+  const { streak, longest, days } = streakData;
+  const today   = getTodayUTC8();
+  const daysMap = Object.fromEntries((days || []).map(d => [d.date, d.done]));
+
+  const last7 = Array.from({ length: 7 }, (_, i) =>
+    new Date(Date.now() + 8 * 3600000 - (6 - i) * 86400000).toISOString().slice(0, 10)
+  );
+
+  const dots = last7.map(date => {
+    if (date === today) {
+      const total   = todayRecordData?.items?.length || 0;
+      const doneN   = total ? todayRecordData.items.filter(i => i.done).length : 0;
+      const allDone = todayRecordData?.allDone;
+      const label   = total ? `${doneN}/${total}` : '–';
+      return `<div class="streak-dot ${allDone ? 'sdone' : 'stoday'}" title="${date}">${allDone ? '✓' : label}</div>`;
+    }
+    const val = daysMap[date];
+    if (val === true)  return `<div class="streak-dot sdone"  title="${date}">✓</div>`;
+    if (val === false) return `<div class="streak-dot smiss"  title="${date}">✗</div>`;
+    return `<div class="streak-dot sempty" title="${date}">–</div>`;
+  }).join('');
+
+  const fire = streak >= 7 ? '🔥' : streak >= 3 ? '⭕' : streak > 0 ? '✨' : '💤';
+
+  el.innerHTML = `
+    <div class="streak-card">
+      <div class="streak-main">
+        <span class="streak-fire">${fire}</span>
+        <span class="streak-num">${streak}</span>
+        <span class="streak-label">天連續完成</span>
+        ${longest > 0 ? `<span class="streak-best">最高 ${longest} 天</span>` : ''}
+      </div>
+      <div class="streak-days">${dots}</div>
+    </div>
+  `;
+}
+
+function renderDailyTemplateList(templates) {
+  const list = document.getElementById('daily-template-list');
+  if (!list) return;
+  if (!templates.length) {
+    list.innerHTML = '<p class="empty-msg">還沒有每日必辦事項，新增一個吧！</p>';
+    return;
+  }
+  list.innerHTML = templates.map(t => `
+    <div class="daily-template-item">
+      <span class="daily-tmpl-icon">☑</span>
+      <span class="daily-tmpl-title">${esc(t.title)}</span>
+      <button class="daily-tmpl-del" onclick="__delDailyTmpl('${esc(t.id)}')" title="刪除">✕</button>
+    </div>
+  `).join('');
+}
+
+function renderDailyPinnedItems() {
+  const container = document.getElementById('daily-pinned');
+  if (!container) return;
+  const record = todayRecordData;
+  if (!record || !record.items || !record.items.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const total     = record.items.length;
+  const doneCount = record.items.filter(i => i.done).length;
+  const allDone   = record.allDone;
+  const today     = getTodayUTC8();
+
+  const itemsHtml = record.items.map((item, i) => `
+    <div class="daily-item-card${item.done ? ' done' : ''}">
+      <div class="daily-item-left">
+        <span class="daily-item-badge">每日必辦</span>
+        <span class="daily-item-title">${esc(item.title)}</span>
+      </div>
+      <div class="daily-item-right">
+        <span class="daily-item-time">📅 ${esc(today)}</span>
+        <button class="daily-check-btn" onclick="__toggleDaily(${i})">
+          ${item.done ? '撤銷' : '完成 ✓'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="daily-pinned-section">
+      <div class="daily-pinned-header">
+        <span>今日必辦</span>
+        <span class="daily-progress-text">${doneCount}/${total} 完成${allDone ? ' 🎉' : ''}</span>
+      </div>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
+window.__toggleDaily = async (itemIndex) => {
+  const user = auth.currentUser;
+  if (!user || !todayRecordData) return;
+  const today = getTodayUTC8();
+  const ref   = doc(db, 'users', user.uid, 'dailyRecords', today);
+  const items = todayRecordData.items.map((item, i) =>
+    i === itemIndex ? { ...item, done: !item.done } : item
+  );
+  const allDone = items.every(i => i.done);
+  await updateDoc(ref, { items, allDone });
+};
+
+window.__delDailyTmpl = async (id) => {
+  const user = auth.currentUser;
+  if (!user) return;
+  if (!confirm('確定要刪除這個每日必辦事項嗎？')) return;
+  await deleteDoc(doc(db, 'users', user.uid, 'dailyTemplates', id));
+};
+
+// ── Pull-to-refresh ────────────────────────────────────────────────────────
+function initPullToRefresh() {
+  const THRESHOLD = 70;
+
+  const el = document.createElement('div');
+  el.id = 'ptr-indicator';
+  el.innerHTML = '<div class="ptr-spinner"></div><span>下拉以重新整理</span>';
+  document.body.appendChild(el);
+
+  const label   = el.querySelector('span');
+  const spinner = el.querySelector('.ptr-spinner');
+
+  let startY = 0, startScrollTop = 0, delta = 0, active = false;
+
+  function getActiveScrollTop() {
+    for (const id of ['task-scroll-area', 'daily-view', 'notes-list', 'expense-list']) {
+      const node = document.getElementById(id);
+      if (node && node.offsetParent !== null) return node.scrollTop;
+    }
+    return 0;
+  }
+
+  document.addEventListener('touchstart', e => {
+    startY         = e.touches[0].pageY;
+    startScrollTop = getActiveScrollTop();
+    delta  = 0;
+    active = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    const dy = e.touches[0].pageY - startY;
+    if (dy <= 0 || startScrollTop > 0) return;
+
+    active = true;
+    delta  = dy;
+
+    const pullY    = Math.min(dy * 0.45, 52);
+    const progress = Math.min(dy / THRESHOLD, 1);
+
+    el.style.transform = `translateX(-50%) translateY(${pullY}px)`;
+    el.style.opacity   = String(Math.min(progress * 1.4, 1));
+    spinner.style.transform = `rotate(${progress * 360}deg)`;
+    label.textContent = progress >= 1 ? '放開以重新整理' : '下拉以重新整理';
+
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('touchend', () => {
+    if (!active) return;
+    active = false;
+
+    if (delta >= THRESHOLD) {
+      el.classList.add('ptr-loading');
+      el.style.transform = 'translateX(-50%) translateY(56px)';
+      el.style.opacity   = '1';
+      label.textContent  = '重新整理中…';
+      setTimeout(() => window.location.reload(), 500);
+    } else {
+      el.style.transition = 'transform 0.28s ease, opacity 0.28s ease';
+      el.style.transform  = 'translateX(-50%) translateY(-64px)';
+      el.style.opacity    = '0';
+      const done = () => { el.style.transition = ''; el.removeEventListener('transitionend', done); };
+      el.addEventListener('transitionend', done);
+    }
+    delta = 0;
+  });
 }
 
 // ── Service worker ─────────────────────────────────────────────────────────

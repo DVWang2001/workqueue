@@ -60,6 +60,7 @@ service cloud.firestore {
 
     <nav id="main-nav" hidden>
       <button class="nav-tab active" data-tab="tasks">待辦事項</button>
+      <button class="nav-tab"        data-tab="daily">每日必辦</button>
       <button class="nav-tab"        data-tab="notes">備忘錄</button>
       <button class="nav-tab"        data-tab="ledger">記帳</button>
     </nav>
@@ -81,7 +82,23 @@ service cloud.firestore {
         </div>
       </form>
       <hr id="divider" hidden>
-      <main id="task-list"></main>
+      <div id="task-scroll-area">
+        <div id="daily-pinned"></div>
+        <main id="task-list"></main>
+      </div>
+    </div>
+
+    <!-- ── 每日必辦 ──────────────────────────────────────────────────────── -->
+    <div id="daily-view" hidden>
+      <div id="streak-banner"></div>
+      <form id="daily-form" autocomplete="off">
+        <div class="form-row">
+          <input id="daily-input" type="text" placeholder="新增每日必辦事項…" required>
+          <button type="submit" id="daily-add-btn">新增</button>
+        </div>
+      </form>
+      <hr class="daily-hr">
+      <div id="daily-template-list"></div>
     </div>
 
     <!-- ── 備忘錄 ────────────────────────────────────────────────────────── -->
