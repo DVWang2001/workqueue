@@ -65,6 +65,16 @@ function init() {
     placeholder: '開始寫備忘錄…',
   });
 
+  // Move toolbar out of #editor-scroll so the keyboard can't push it away.
+  // It becomes a flex-shrink:0 child of #editor-pane, always visible above
+  // the scroll area regardless of keyboard / viewport changes.
+  {
+    const editorPane   = document.getElementById('editor-pane');
+    const editorScroll = document.getElementById('editor-scroll');
+    const toolbar      = editorPane.querySelector('.ql-toolbar');
+    if (toolbar && editorScroll) editorPane.insertBefore(toolbar, editorScroll);
+  }
+
   // Custom image handler — insert by URL (avoids large base64 in Firestore)
   quill.getModule('toolbar').addHandler('image', () => {
     const url = prompt('請輸入圖片網址（URL）：');

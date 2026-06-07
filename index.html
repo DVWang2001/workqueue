@@ -122,9 +122,11 @@ service cloud.firestore {
           <button id="share-note-btn">分享</button>
           <button id="delete-note-btn">刪除</button>
         </div>
-        <input id="note-title" type="text" placeholder="標題…" class="note-title-input" autocomplete="off">
-        <!-- Quill 會在這裡產生工具列 + 編輯區域 -->
-        <div id="quill-editor"></div>
+        <div id="editor-scroll">
+          <input id="note-title" type="text" placeholder="標題…" class="note-title-input" autocomplete="off">
+          <!-- Quill 會在這裡產生工具列 + 編輯區域 -->
+          <div id="quill-editor"></div>
+        </div>
       </div>
 
     </div>
