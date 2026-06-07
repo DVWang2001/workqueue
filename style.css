@@ -83,18 +83,22 @@ header h1 { font-size: 1.35rem; font-weight: 700; color: var(--accent); flex: 1;
 /* ── Nav tabs ────────────────────────────────────────────────────────────── */
 #main-nav {
   display: flex;
-  background: var(--header);
-  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
   flex-shrink: 0;
+  padding: 0 18px;
+  gap: 4px;
 }
 
 .nav-tab {
-  flex: 1; padding: 9px;
-  border: none; border-bottom: 2px solid transparent;
-  background: transparent; color: var(--muted);
-  font-size: 0.88rem; font-weight: 600; cursor: pointer;
+  padding: 10px 20px;
+  border: none; border-bottom: 3px solid transparent;
+  background: transparent; color: var(--subtext);
+  font-size: 0.92rem; font-weight: 700; cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -2px;
 }
+.nav-tab:hover { color: var(--accent); }
 .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* ── Task form ───────────────────────────────────────────────────────────── */
