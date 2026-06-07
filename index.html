@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkQueue</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a6cf7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="WorkQueue">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── 首次設定說明（未填寫 Firebase config 時顯示） ─────────────────── -->
+  <div id="setup-screen" hidden>
+    <div class="setup-card">
+      <h2>🔧 首次設定 Firebase</h2>
+      <p>填好以下步驟後，跨裝置同步就能啟用。</p>
+      <ol>
+        <li>前往 <a href="https://console.firebase.google.com" target="_blank" rel="noopener">Firebase Console</a>，建立新專案。</li>
+        <li><strong>Firestore Database</strong> → 建立資料庫 → 選 <em>Production mode</em>。</li>
+        <li><strong>Authentication</strong> → Sign-in method → 啟用 <em>Google</em>。</li>
+        <li>專案設定 → 您的應用程式 → 新增<strong>網頁應用程式</strong> → 複製 config 物件。</li>
+        <li>將 config 貼入 <code>firebase-config.js</code>，取代 <code>YOUR_*</code> 佔位符。</li>
+        <li>在 Firestore <strong>Rules</strong> 頁貼上以下安全性規則後發布：</li>
+      </ol>
+      <pre><code>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/tasks/{id} {
+      allow read, write: if request.auth.uid == uid;
+    }
+  }
+}</code></pre>
+      <p style="margin-top:14px">設定完成後重新整理頁面即可使用。</p>
+    </div>
+  </div>
+
+  <!-- ── 主應用程式 ──────────────────────────────────────────────────────── -->
+  <div id="app">
+
+    <header>
+      <h1>WorkQueue</h1>
+      <div id="auth-loading" class="spinner" aria-label="載入中"></div>
+      <div id="login-section" hidden>
+        <button id="login-btn">使用 Google 登入</button>
+      </div>
+      <div id="user-section" hidden>
+        <img id="user-photo" alt="">
+        <span id="user-name"></span>
+        <button id="logout-btn">登出</button>
+      </div>
+    </header>
+
+    <form id="add-form" hidden autocomplete="off">
+      <div class="form-row">
+        <input id="title-input" type="text" placeholder="新增任務名稱…" required>
+        <div class="dur-group">
+          <input id="dur-input" type="number" placeholder="時間" min="0.5" step="0.5" required>
+          <select id="unit-select">
+            <option value="分鐘">分鐘</option>
+            <option value="小時">小時</option>
+          </select>
+        </div>
+        <button type="submit" id="add-btn">新增</button>
+      </div>
+    </form>
+
+    <hr id="divider" hidden>
+
+    <main id="task-list"></main>
+
+  </div>
+
+  <footer id="status-bar"></footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
