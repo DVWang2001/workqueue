@@ -401,36 +401,50 @@ function startEditorVVFix() {
   const vv = window.visualViewport;
   if (!vv) return;
   const editorPane = document.getElementById('editor-pane');
-  const baselineH  = vv.height; // height before keyboard opens
+  const baselineH  = vv.height;
+  let lastSel      = null; // cache last known selection in case focus is lost on resize
 
   function scrollCursorIntoView() {
-    const editorScroll = document.getElementById('editor-scroll');
-    if (!editorScroll) return;
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
-    if (!rect.height) return;
+    if (!quill) return;
+    // quill.getSelection() may return null during viewport resize; fall back to cached
+    const qSel = quill.getSelection() || lastSel;
+    if (!qSel) return;
+    // getBounds returns position relative to #quill-editor, accounting for internal scroll
+    const bounds = quill.getBounds(qSel.index, qSel.length);
+    if (!bounds) return;
+    const qlEl = document.getElementById('quill-editor');
+    if (!qlEl) return;
+    // qlRect.top is the viewport-y of quill-editor's top (negative if scrolled past)
+    const qlRect = qlEl.getBoundingClientRect();
+    const cursorBottom = qlRect.top + bounds.bottom;
     const margin = 24;
-    if (rect.bottom > vv.height - margin) {
-      editorScroll.scrollTop += rect.bottom - (vv.height - margin);
+    if (cursorBottom > vv.height - margin) {
+      const editorScroll = document.getElementById('editor-scroll');
+      if (editorScroll) editorScroll.scrollTop += cursorBottom - (vv.height - margin);
     }
   }
 
   function update() {
     if (!editorPane) return;
     const offsetTop = vv.offsetTop || 0;
-    // iOS: layout viewport scrolls up (offsetTop > 0)
-    // Android: visual viewport shrinks (offsetTop stays 0, but height drops)
+    // iOS: layout viewport scrolls up (offsetTop > 0) — counteract with translateY
+    // Android: visual viewport shrinks (offsetTop stays 0) — 100dvh CSS handles resize
     const keyboardOpen = offsetTop > 0 || vv.height < baselineH * 0.8;
     editorPane.style.transform = offsetTop ? `translateY(${offsetTop}px)` : '';
-    editorPane.style.height    = keyboardOpen ? `${vv.height}px` : '';
-    if (keyboardOpen) requestAnimationFrame(scrollCursorIntoView);
+    // Height override only for iOS (Android body already resizes via 100dvh)
+    editorPane.style.height    = offsetTop ? `${vv.height}px` : '';
+    if (keyboardOpen) {
+      requestAnimationFrame(scrollCursorIntoView);
+      // Second pass after keyboard animation settles (~300 ms)
+      setTimeout(scrollCursorIntoView, 300);
+    }
   }
 
   function onSelectionChange(range) {
+    if (range) lastSel = range;
     const offsetTop = vv.offsetTop || 0;
     const keyboardOpen = offsetTop > 0 || vv.height < baselineH * 0.8;
-    if (range && keyboardOpen) requestAnimationFrame(scrollCursorIntoView);
+    if (range && keyboardOpen) setTimeout(scrollCursorIntoView, 50);
   }
 
   vv.addEventListener('scroll', update);
