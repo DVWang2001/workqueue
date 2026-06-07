@@ -401,19 +401,42 @@ function startEditorVVFix() {
   const vv = window.visualViewport;
   if (!vv) return;
   const editorPane = document.getElementById('editor-pane');
+
+  function scrollCursorIntoView() {
+    const editorScroll = document.getElementById('editor-scroll');
+    if (!editorScroll) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (!rect.height) return;
+    const margin = 24;
+    if (rect.bottom > vv.height - margin) {
+      editorScroll.scrollTop += rect.bottom - (vv.height - margin);
+    }
+  }
+
   function update() {
     if (!editorPane) return;
     const offsetTop = vv.offsetTop || 0;
-    // Counteract iOS layout-viewport scroll so toolbar stays on screen
     editorPane.style.transform = offsetTop ? `translateY(${offsetTop}px)` : '';
-    // Constrain height to visual viewport so #editor-scroll scrolls cursor above keyboard
-    editorPane.style.height = offsetTop ? `${vv.height}px` : '';
+    editorPane.style.height    = offsetTop ? `${vv.height}px` : '';
+    // iOS undid its own scroll-to-cursor when we applied translateY; redo it ourselves
+    if (offsetTop > 0) requestAnimationFrame(scrollCursorIntoView);
   }
+
+  function onSelectionChange(range) {
+    // Keyboard already open but cursor moved to a new (possibly lower) position
+    if (range && (vv.offsetTop || 0) > 0) requestAnimationFrame(scrollCursorIntoView);
+  }
+
   vv.addEventListener('scroll', update);
   vv.addEventListener('resize', update);
+  quill.on('selection-change', onSelectionChange);
+
   _vvFixCleanup = () => {
     vv.removeEventListener('scroll', update);
     vv.removeEventListener('resize', update);
+    quill.off('selection-change', onSelectionChange);
     if (editorPane) { editorPane.style.transform = ''; editorPane.style.height = ''; }
   };
 }
