@@ -25,6 +25,7 @@ let todayRecordData    = null;
 let streakData         = { streak: 0, longest: 0, lastCheck: '', days: [] };
 let lastKnownDateUTC8  = '';
 let dailyDayCheckTimer = null;
+let _vvFixCleanup      = null;
 
 // Quill toolbar — matches Blogspot editor feature set
 const TOOLBAR = [
@@ -395,6 +396,29 @@ async function createNote() {
   openNote({ id: ref.id, title: '', content: '', contentType: 'html' });
 }
 
+function startEditorVVFix() {
+  stopEditorVVFix();
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const editorPane = document.getElementById('editor-pane');
+  function update() {
+    if (editorPane) {
+      editorPane.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+    }
+  }
+  vv.addEventListener('scroll', update);
+  vv.addEventListener('resize', update);
+  _vvFixCleanup = () => {
+    vv.removeEventListener('scroll', update);
+    vv.removeEventListener('resize', update);
+    if (editorPane) editorPane.style.transform = '';
+  };
+}
+
+function stopEditorVVFix() {
+  if (_vvFixCleanup) { _vvFixCleanup(); _vvFixCleanup = null; }
+}
+
 function openNote(note) {
   currentNoteId = note.id;
   document.getElementById('note-title').value = note.title || '';
@@ -414,6 +438,7 @@ function openNote(note) {
 
   document.getElementById('notes-list-pane').hidden = true;
   document.getElementById('editor-pane').hidden     = false;
+  startEditorVVFix();
 
   // Focus appropriately
   setTimeout(() => {
@@ -423,6 +448,7 @@ function openNote(note) {
 }
 
 async function closeEditor() {
+  stopEditorVVFix();
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   if (currentNoteId && auth.currentUser) {
     const title   = document.getElementById('note-title').value.trim();
@@ -442,6 +468,7 @@ async function closeEditor() {
 async function deleteCurrentNote() {
   if (!currentNoteId || !auth.currentUser) return;
   if (!confirm('確定要刪除這則筆記嗎？')) return;
+  stopEditorVVFix();
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'notes', currentNoteId));
   currentNoteId = null;
