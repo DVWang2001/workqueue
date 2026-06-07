@@ -15,7 +15,7 @@
 </head>
 <body>
 
-  <!-- ── 首次設定說明（未填寫 Firebase config 時顯示） ─────────────────── -->
+  <!-- ── 首次設定說明 ──────────────────────────────────────────────────────── -->
   <div id="setup-screen" hidden>
     <div class="setup-card">
       <h2>🔧 首次設定 Firebase</h2>
@@ -31,7 +31,7 @@
       <pre><code>rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/tasks/{id} {
+    match /users/{uid}/{col}/{id} {
       allow read, write: if request.auth.uid == uid;
     }
   }
@@ -56,28 +56,75 @@ service cloud.firestore {
       </div>
     </header>
 
-    <form id="add-form" hidden autocomplete="off">
-      <div class="form-row">
-        <input id="title-input" type="text" placeholder="新增任務名稱…" required>
-        <div class="dur-group">
-          <input id="dur-input" type="number" placeholder="時間" min="0.5" step="0.5" required>
-          <select id="unit-select">
-            <option value="分鐘">分鐘</option>
-            <option value="小時">小時</option>
-          </select>
+    <!-- ── 頁籤導覽 ────────────────────────────────────────────────────────── -->
+    <nav id="main-nav" hidden>
+      <button class="nav-tab active" data-tab="tasks">待辦事項</button>
+      <button class="nav-tab"        data-tab="notes">備忘錄</button>
+    </nav>
+
+    <!-- ── 待辦事項 view ───────────────────────────────────────────────────── -->
+    <div id="tasks-view">
+      <form id="add-form" hidden autocomplete="off">
+        <div class="form-row">
+          <input id="title-input" type="text" placeholder="新增任務名稱…" required>
+          <div class="dur-group">
+            <input id="dur-input" type="number" placeholder="時間" min="0.5" step="0.5" required>
+            <select id="unit-select">
+              <option value="分鐘">分鐘</option>
+              <option value="小時">小時</option>
+            </select>
+          </div>
+          <button type="submit" id="add-btn">新增</button>
         </div>
-        <button type="submit" id="add-btn">新增</button>
+      </form>
+      <hr id="divider" hidden>
+      <main id="task-list"></main>
+    </div>
+
+    <!-- ── 備忘錄 view ─────────────────────────────────────────────────────── -->
+    <div id="notes-view" hidden>
+
+      <!-- 筆記列表 -->
+      <div id="notes-list-pane">
+        <div class="notes-header">
+          <span id="notes-count"></span>
+          <button id="new-note-btn">＋ 新增筆記</button>
+        </div>
+        <div id="notes-list"></div>
       </div>
-    </form>
 
-    <hr id="divider" hidden>
+      <!-- 編輯器 -->
+      <div id="editor-pane" hidden>
+        <div class="editor-topbar">
+          <button id="back-to-notes">← 筆記</button>
+          <span id="editor-status"></span>
+          <button id="delete-note-btn">刪除</button>
+        </div>
 
-    <main id="task-list"></main>
+        <input id="note-title" type="text" placeholder="標題…" class="note-title-input" autocomplete="off">
+
+        <div class="editor-controls">
+          <div id="md-toolbar"></div>
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="edit-mode-btn">編輯</button>
+            <button class="mode-btn"        id="preview-mode-btn">預覽</button>
+          </div>
+        </div>
+
+        <textarea id="note-content" spellcheck="false"
+          placeholder="開始用 Markdown 寫筆記…&#10;&#10;支援：# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦…"></textarea>
+        <div id="note-preview" class="md-preview" hidden></div>
+      </div>
+
+    </div>
 
   </div>
 
   <footer id="status-bar"></footer>
 
+  <!-- Markdown 渲染 & 安全性 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
