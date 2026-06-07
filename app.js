@@ -9,14 +9,6 @@ import {
   doc, query, orderBy, onSnapshot, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js';
 
-// ── Config check ────────────────────────────────────────────────────────────
-if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
-  document.getElementById('setup-screen').hidden = false;
-  document.getElementById('app').hidden = true;
-} else {
-  init();
-}
-
 // ── Module-level state ─────────────────────────────────────────────────────
 let auth, db;
 let quill = null;
@@ -24,6 +16,14 @@ let unsubTasks = null;
 let unsubNotes = null;
 let currentNoteId = null;
 let saveTimer = null;
+
+// ── Config check ────────────────────────────────────────────────────────────
+if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
+  document.getElementById('setup-screen').hidden = false;
+  document.getElementById('app').hidden = true;
+} else {
+  init();
+}
 
 // Quill toolbar — matches Blogspot editor feature set
 const TOOLBAR = [
