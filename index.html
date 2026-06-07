@@ -68,6 +68,7 @@ service cloud.firestore {
       <form id="add-form" hidden autocomplete="off">
         <div class="form-row">
           <input id="title-input" type="text" placeholder="新增任務名稱…" required>
+          <button type="button" id="task-voice-btn" class="voice-btn" title="語音輸入">🎤</button>
           <div class="dur-group">
             <input id="dur-input" type="number" placeholder="時間" min="0.5" step="0.5" required>
             <select id="unit-select">
@@ -99,6 +100,7 @@ service cloud.firestore {
         <div class="editor-topbar">
           <button id="back-to-notes">← 筆記</button>
           <span id="editor-status"></span>
+          <button id="note-voice-btn" class="voice-btn" title="語音輸入">🎤</button>
           <button id="share-note-btn">分享</button>
           <button id="delete-note-btn">刪除</button>
         </div>

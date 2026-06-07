@@ -324,6 +324,29 @@ hr#divider { border: none; border-top: 1px solid var(--border); margin: 0 18px; 
 }
 #quill-editor .ql-editor img { max-width: 100%; border-radius: 6px; }
 
+/* ── Voice input button ──────────────────────────────────────────────────── */
+.voice-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+.voice-btn:hover { background: rgba(74,108,247,0.08); border-color: var(--accent); }
+.voice-btn.voice-recording {
+  background: #fee2e2;
+  border-color: #ef4444;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
 /* ── Share button in topbar ──────────────────────────────────────────────── */
 #share-note-btn {
   background: transparent;

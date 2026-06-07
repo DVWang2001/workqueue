@@ -138,6 +138,23 @@ function init() {
 
   // Auto-save on title change
   document.getElementById('note-title').addEventListener('input', scheduleSave);
+
+  // Voice input — task
+  document.getElementById('task-voice-btn').addEventListener('click', () => {
+    startVoice(document.getElementById('task-voice-btn'), text => {
+      document.getElementById('title-input').value = text;
+      document.getElementById('title-input').focus();
+    });
+  });
+
+  // Voice input — note
+  document.getElementById('note-voice-btn').addEventListener('click', () => {
+    startVoice(document.getElementById('note-voice-btn'), text => {
+      const range = quill.getSelection() ?? { index: quill.getLength() };
+      quill.insertText(range.index, text, 'user');
+      quill.setSelection(range.index + text.length);
+    });
+  });
 }
 
 // ── Auth UI ────────────────────────────────────────────────────────────────
@@ -432,6 +449,30 @@ function showToast(msg) {
   el.hidden = false;
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
+}
+
+// ── Voice Input ────────────────────────────────────────────────────────────
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function startVoice(btn, onResult) {
+  if (!SR) { showToast('您的瀏覽器不支援語音輸入（建議使用 Chrome 或 Edge）'); return; }
+  const rec = new SR();
+  rec.lang = 'zh-TW';
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+
+  btn.classList.add('voice-recording');
+
+  rec.onresult = e => {
+    onResult(e.results[0][0].transcript);
+  };
+  rec.onerror = () => {
+    showToast('語音辨識失敗，請再試一次');
+  };
+  rec.onend = () => {
+    btn.classList.remove('voice-recording');
+  };
+  rec.start();
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
