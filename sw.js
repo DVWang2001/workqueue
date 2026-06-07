@@ -1,4 +1,4 @@
-const CACHE = 'workqueue-v1';
+const CACHE = 'workqueue-v2';
 const SHELL = ['./', './index.html', './style.css', './app.js',
                './firebase-config.js', './manifest.json', './icon.svg'];
 
@@ -17,9 +17,27 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // 只快取同源靜態資源，Firebase / Google API 走網路
   if (!e.request.url.startsWith(self.location.origin)) return;
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request))
-  );
+
+  // HTML / JS / CSS：網路優先，離線才用快取
+  const url = new URL(e.request.url);
+  const isShell = ['.html', '.js', '.css', '.json'].some(ext => url.pathname.endsWith(ext))
+                  || url.pathname === '/' || url.pathname.endsWith('/');
+
+  if (isShell) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+  } else {
+    // 圖示等靜態資源：快取優先
+    e.respondWith(
+      caches.match(e.request).then(hit => hit || fetch(e.request))
+    );
+  }
 });
